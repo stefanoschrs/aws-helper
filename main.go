@@ -55,12 +55,12 @@ func invalidate(awsSession *session.Session, distributionId string) (err error) 
 	return
 }
 
-func main() {
-	green := color.New(color.FgGreen).SprintFunc()
+func createAWSSession(c *cli.Context) (s *session.Session, err error) {
+	envPath := c.String("env")
 
-	err := godotenv.Load()
+	err = godotenv.Load(envPath)
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 
 	cfg := aws.Config{
@@ -69,24 +69,37 @@ func main() {
 			os.Getenv("AWS_PROFILE"),
 		),
 	}
-	awsSession, err := session.NewSession(&cfg)
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	return session.NewSession(&cfg)
+}
+
+func main() {
+	green := color.New(color.FgGreen).SprintFunc()
 
 	app := &cli.App{
+		Usage:   "Helper functions for common aws actions",
+		Version: "0.0.1",
 		Commands: []*cli.Command{
 			{
 				Name:        "invalidate",
 				Usage:       "invalidate <name>",
 				Description: "invalidate a CloudFront distribution's cache",
 				Action: func(c *cli.Context) (err error) {
+					awsSession, err := createAWSSession(c)
+					if err != nil {
+						return
+					}
+
 					name := c.Args().First()
 					if name == "" {
 						return errors.New("missing distribution name")
 					}
 
 					distributionId := os.Getenv("cloudfront_" + name)
+					if distributionId == "" {
+						return errors.New("distribution alias not found in configuration")
+					}
+
 					fmt.Printf("Invalidating %s (%s).. ", green(name), distributionId)
 
 					err = invalidate(awsSession, distributionId)
@@ -97,6 +110,13 @@ func main() {
 					fmt.Println(green("COMPLETE"))
 					return
 				},
+			},
+		},
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "env",
+				Value: ".env",
+				Usage: "env configuration file",
 			},
 		},
 	}
